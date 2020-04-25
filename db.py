@@ -22,7 +22,7 @@ class MIMSDBResponse:
         self.message = message
         self.requested_data = None
 
-# Quick dirty sqlite database for prototype
+# Use sqlite for now because of easy setup, could be changed to MySQL later
 class MIMSDatabase:
     def __init__(self, db_path):
         self.threadlock = threading.Lock()
@@ -74,7 +74,7 @@ class MIMSDatabase:
                     recipient_uuid TEXT NOT NULL,
                     aes_key_encrypted TEXT NOT NULL,
                     message TEXT NOT NULL,
-                    timestamp REAL NOT NULL, 
+                    timestamp REAL NOT NULL,
                     rsa_sig TEXT NOT NULL,
                     FOREIGN KEY(sender_uuid) REFERENCES users(uuid),
                     FOREIGN KEY(recipient_uuid) REFERENCES users(uuid)
@@ -122,11 +122,12 @@ class MIMSDatabase:
                                 rsa_sig
                              )
                         )
+                        conn.execute("INSERT INTO user_info(uuid) VALUES (?)", (uuid,))
                         return MIMSDBResponse(True, uuid)
                     except sqlite3.IntegrityError as e:
                         last_error = e
         return MIMSDBResponse(False, f"Internal Server Error: Uuid generation: {last_error}")
-    
+
     # Parameters should all be in string format
     def request_public_keys(self, requesting_uuid, requester_uuid, rsa_sig):
         resp = self.verify_request([requesting_uuid, requester_uuid], requester_uuid, rsa_sig)
@@ -135,7 +136,7 @@ class MIMSDatabase:
         with self.threadlock:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = self.dict_factory
-                cur = conn.execute("SELECT pks, pke, rsa_sig FROM users WHERE uuid = ?;", (requesting_uuid,))
+                cur = conn.execute("SELECT pks, pke, rsa_sig FROM users WHERE uuid = ?", (requesting_uuid,))
                 row = cur.fetchone()
                 if row == None:
                     return MIMSDBResponse(False, "Requested uuid does not exist")
@@ -151,13 +152,31 @@ class MIMSDatabase:
         with self.threadlock:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = self.dict_factory
-                cur = conn.execute("SELECT * FROM user_info WHERE uuid = ?;", (requesting_uuid,))
+                cur = conn.execute("SELECT * FROM user_info WHERE uuid = ?", (requesting_uuid,))
                 row = cur.fetchone()
                 if row == None:
                     return MIMSDBResponse(False, "Requested uuid does not exist")
                 response = MIMSDBResponse(True, "Success")
                 response.requested_data = row
                 return response
+
+    def set_display_name(self, uuid, display_name, rsa_sig):
+        resp = self.verify_request([uuid, display_name], uuid, rsa_sig)
+        if not resp.successful:
+            return resp
+        with self.threadlock:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("UPDATE user_info SET display_name = ? WHERE uuid = ?", display_name, uuid)
+        return MIMSDBResponse(True, "Success")
+
+    def set_display_status(self, uuid, display_status, rsa_sig):
+        resp = self.verify_request([uuid, display_status], uuid, rsa_sig)
+        if not resp.successful:
+            return resp
+        with self.threadlock:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("UPDATE user_info SET display_status = ? WHERE uuid = ?", display_status, uuid)
+        return MIMSDBResponse(True, "Success")
 
     def send_message(self, recipient_uuid, aes_key_encrypted, message, sender_uuid, rsa_sig):
         resp = self.verify_request([recipient_uuid, aes_key_encrypted, message, sender_uuid], sender_uuid, rsa_sig)
@@ -231,12 +250,13 @@ class MIMSDatabase:
                 return response
 
     # The requests are signed by first sorting request_params by string alphabetically
+    # Binary data are converted to base64 before signing
     def verify_request(self, request_params, sender_uuid, rsa_sig):
         request_str = ''.join(sorted(map(str, request_params)))
         pks_pem = ""
         with self.threadlock:
             with sqlite3.connect(self.db_path) as conn:
-                cur = conn.execute("SELECT pks FROM users WHERE uuid = ?;", (sender_uuid,))
+                cur = conn.execute("SELECT pks FROM users WHERE uuid = ?", (sender_uuid,))
                 row = cur.fetchone()
                 if row == None:
                     return MIMSDBResponse(False, "Invalid uuid")
@@ -245,7 +265,7 @@ class MIMSDatabase:
             return MIMSDBResponse(True, "Success")
         else:
             return MIMSDBResponse(False, f"Key verification error: {e}")
-     
+
     def rsa_verify(self, request_str, pks_pem, rsa_sig):
         try:
             pks = Crypto.PublicKey.RSA.import_key(pks_pem)
@@ -257,7 +277,7 @@ class MIMSDatabase:
             return True
         except (ValueError, IndexError, TypeError) as e:
             return False
-    
+
     # Makes a dictionary from sqlite3 query results
     def dict_factory(self, cursor, row):
         d = {}
