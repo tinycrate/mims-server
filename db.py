@@ -60,7 +60,7 @@ class MIMSDatabase:
                     uuid TEXT NOT NULL UNIQUE,
                     display_name TEXT,
                     display_status TEXT,
-                    display_icon BLOB,
+                    display_icon TEXT,
                     rsa_sig TEXT NOT NULL,
                     FOREIGN KEY(uuid) REFERENCES users(uuid)
                 );
