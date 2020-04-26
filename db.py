@@ -269,9 +269,9 @@ class MIMSDatabase:
     def rsa_verify(self, request_str, pks_pem, rsa_sig):
         try:
             pks = Crypto.PublicKey.RSA.import_key(pks_pem)
-            # RSA 2048 PSS (Salt-length: 128) Hash: SHA-512
-            verifier = Crypto.Signature.pss.new(pks, salt_bytes=128)
-            hash = Crypto.Hash.SHA512.new(request_str.encode("utf-8"))
+            # RSA 2048 SHA256withRSA/PSS
+            verifier = Crypto.Signature.pss.new(pks)
+            hash = Crypto.Hash.SHA256.new(request_str.encode("utf-8"))
             signature = base64.b64decode(rsa_sig)
             verifier.verify(hash, signature)
             return True
