@@ -42,7 +42,7 @@ class ClientInfo:
 def home():
     return "API endpoint for MIMS"
 
-@app.route('/register_uuid', methods=['GET', 'POST'])
+@app.route('/register_new_keys', methods=['GET', 'POST'])
 def register():
     response = db.register_new_keys (
         base64.b64decode(request.form['pks_pem']).decode('utf-8'),
@@ -50,6 +50,7 @@ def register():
         request.form['username'],
         request.form['keys'],
         request.form['retrieval_hash'],
+        request.form['salt'],
         request.form['rsa_sig']
     )
     if response.successful:
@@ -100,6 +101,16 @@ def send_message():
 @app.route('/check_username_availablilty', methods=['GET', 'POST'])
 def check_username_availablilty():
     return jsonify(successful=response.successful, message=db.check_username_exist(request.form['username']))
+
+@app.route('/get_key_salt', methods=['GET', 'POST'])
+def get_key_salt():
+    response = db.get_key_salt (
+        request.form['username']
+    )
+    if response.successful:
+        return jsonify(successful=True, message="Success", salt=response.requested_data)
+    else:
+        return jsonify(successful=False, message=response.message)
 
 @app.route('/download_keys', methods=['GET', 'POST'])
 def download_keys():

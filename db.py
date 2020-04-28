@@ -51,7 +51,8 @@ class MIMSDatabase:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL UNIQUE,
                     keys TEXT NOT NULL,
-                    retrieval_hash TEXT NOT NULL
+                    retrieval_hash TEXT NOT NULL,
+                    salt TEXT NOT NULL
                 );
             """)
             # Table for user public information, signed by the user's RSA key
@@ -96,7 +97,7 @@ class MIMSDatabase:
                 cur = conn.execute("SELECT 1 FROM users WHERE uuid = ?;", (uuid,))
                 return cur.fetchone() != None
 
-    def register_new_keys(self, pks_pem, pke_pem, username, keys, retrieval_hash, rsa_sig):
+    def register_new_keys(self, pks_pem, pke_pem, username, keys, retrieval_hash, salt, rsa_sig):
         # Performs basic validation of the public keys
         # Does not verify pke_pem on server side
         username = strip(username)
@@ -113,7 +114,8 @@ class MIMSDatabase:
             pke_pem.encode("utf-8"),
             username,
             keys,
-            retrieval_hash
+            retrieval_hash,
+            salt
         ]
         if (not rsa_verify(request_params, pks_pem, rsa_sig)):
             return MIMSDBResponse(False, f"Key verification error: {e}")
@@ -131,9 +133,9 @@ class MIMSDatabase:
                     last_error = None
                     successful = False
                     conn.execute("""
-                    INSERT INTO user_keys(username, keys, retrieval_hash)
-                    VALUES(?,?,?)
-                    """, (username, keys, retrieval_hash))
+                    INSERT INTO user_keys(username, keys, retrieval_hash, salt)
+                    VALUES(?,?,?,?)
+                    """, (username, keys, retrieval_hash,salt))
                     for retries in range(0,10):
                         try:
                             uuid = ''.join(random.choices(uuid_charset, k=12))
@@ -253,6 +255,19 @@ class MIMSDatabase:
         with self.threadlock:
             with sqlite3.connect(self.db_path) as conn:
                     conn.execute("DELETE FROM messages WHERE id = ? AND timestamp < ?", (message['id'],timestamp))
+
+    def get_key_salt(self, username):
+        with self.threadlock:
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.execute("""
+                SELECT salt FROM user_keys WHERE username = ?
+                """, (username))
+                row = cur.fetchone()
+                if row == None:
+                    return MIMSDBResponse(False, "No entries found")
+                response = MIMSDBResponse(True, "Success")
+                response.requested_data = row[0]
+                return response
 
     def download_keys(self, username, retrieval_hash):
         retrieval_hash = base64.b64encode(hashlib.sha256(base64.b64decode(retrieval_hash)).digest()).decode('ascii')
