@@ -94,6 +94,10 @@ def send_message():
                 client.schedule_check()
     return jsonify(successful=response.successful, message=response.message)
 
+@app.route('/check_username_availablilty', methods=['GET', 'POST'])
+def check_username_availablilty():
+    return jsonify(successful=response.successful, message=db.check_username_exist(request.form['username']))
+
 @app.route('/upload_keys', methods=['GET', 'POST'])
 def upload_keys():
     response = db.upload_keys (
