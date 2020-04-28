@@ -152,12 +152,12 @@ class MIMSDatabase:
                         except sqlite3.IntegrityError as e:
                             last_error = e
                     if not successful:
-                        last_error_msg = "Internal Server Error: Uuid generation"
-                        raise sqlite3.IntegrityError(f"Uuid generation: IntegrityError after 10 retires: {last_error}")
+                        print(f"Internal Server Error: Uuid generation {last_error}")
+                        raise sqlite3.IntegrityError(f"Uuid generation: IntegrityError after 10 retires")
                     conn.execute("INSERT INTO user_info(uuid) VALUES (?)", (uuid,))
                     conn.commit()
             except sqlite3.IntegrityError as e:
-                return MIMSDBResponse(False, str(e))
+                return MIMSDBResponse(False, "duplicated")
         return MIMSDBResponse(True, uuid)
 
     # Parameters should all be in string format
