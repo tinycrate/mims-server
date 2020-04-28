@@ -97,45 +97,21 @@ class MIMSDatabase:
                 cur = conn.execute("SELECT 1 FROM users WHERE uuid = ?;", (uuid,))
                 return cur.fetchone() != None
 
-    def register_new_keys(self, pks_pem, pke_pem, username, keys, retrieval_hash, salt, rsa_sig):
+    def register_uuid(self, pks_pem, pke_pem, rsa_sig):
         # Performs basic validation of the public keys
         # Does not verify pke_pem on server side
-        username = strip(username)
         if len(pks_pem) > 1024 or len(pke_pem) > 1024:
             return MIMSDBResponse(False, "Public key PEM too long (>1024) ")
         if not pks_pem.startswith(pem_header) or not pke_pem.startswith(pem_header):
             return MIMSDBResponse(False, "Public key PEM format invalid")
-        if len(keys) > 8192:
-            return MIMSDBResponse(False, "Key file too long (>8192) ")
-        if username == "":
-            return MIMSDBResponse(False, f"Username cannot be empty")
-        request_params = [
-            pks_pem.encode("utf-8"),
-            pke_pem.encode("utf-8"),
-            username,
-            keys,
-            retrieval_hash,
-            salt
-        ]
+        request_params = [pks_pem.encode("utf-8"),pke_pem.encode("utf-8")]
         if (not rsa_verify(request_params, pks_pem, rsa_sig)):
             return MIMSDBResponse(False, f"Key verification error: {e}")
-        # Hash the retrieval_hash once before storing
-        # The retrieval_hash is NOT password, it is created by hasging a key derived from a key derivation function
-        # It is used to verify if the key is correct before the encrypted private key
-        # could be downloaded in order to prevent offline brute force attacks
-        retrieval_hash = base64.b64encode(hashlib.sha256(base64.b64decode(retrieval_hash)).digest()).decode('ascii')
         # Creates entries on database
         uuid = ""
         with self.threadlock:
             try:
                 with sqlite3.connect(self.db_path) as conn:
-                    conn.execute("BEGIN")
-                    last_error = None
-                    successful = False
-                    conn.execute("""
-                    INSERT INTO user_keys(username, keys, retrieval_hash, salt)
-                    VALUES(?,?,?,?)
-                    """, (username, keys, retrieval_hash,salt))
                     for retries in range(0,10):
                         try:
                             uuid = ''.join(random.choices(uuid_charset, k=12))
@@ -154,13 +130,34 @@ class MIMSDatabase:
                         except sqlite3.IntegrityError as e:
                             last_error = e
                     if not successful:
-                        print(f"Internal Server Error: Uuid generation {last_error}")
                         raise sqlite3.IntegrityError(f"Uuid generation: IntegrityError after 10 retires")
                     conn.execute("INSERT INTO user_info(uuid) VALUES (?)", (uuid,))
                     conn.commit()
             except sqlite3.IntegrityError as e:
-                return MIMSDBResponse(False, "duplicated")
+                return MIMSDBResponse(False, str(e))
         return MIMSDBResponse(True, uuid)
+
+    def upload_keys(self, username, keys, retrieval_hash, salt):
+        username = strip(username)
+        if len(keys) > 8192:
+            return MIMSDBResponse(False, "Key file too long (>8192) ")
+        if username == "":
+            return MIMSDBResponse(False, f"Username cannot be empty")
+        # Hash the retrieval_hash once before storing
+        # The retrieval_hash is NOT password, it is created by hasging a key derived from a key derivation function
+        # It is used to verify if the key is correct before the encrypted private key
+        # could be downloaded in order to prevent offline brute force attacks
+        retrieval_hash = base64.b64encode(hashlib.sha256(base64.b64decode(retrieval_hash)).digest()).decode('ascii')
+        with self.threadlock:
+            try:
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.execute("""
+                    INSERT INTO user_keys(username, keys, retrieval_hash, salt)
+                    VALUES(?,?,?,?)
+                    """, (username, keys, retrieval_hash, salt))
+                return SIMDatabaseResponse(True, "Success")
+            except sqlite3.IntegrityError:
+                return SIMDatabaseResponse(False, "duplicated")
 
     # Parameters should all be in string format
     def request_public_keys(self, requesting_uuid, requester_uuid, rsa_sig):
