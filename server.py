@@ -44,7 +44,7 @@ def home():
 
 @app.route('/register_uuid', methods=['GET', 'POST'])
 def register():
-    response = db.register_uuid (
+    response = db.register_new_keys (
         base64.b64decode(request.form['pks_pem']).decode('utf-8'),
         base64.b64decode(request.form['pke_pem']).decode('utf-8'),
         request.form['username'],
