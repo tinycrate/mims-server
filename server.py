@@ -6,10 +6,10 @@ import Crypto
 import base64
 import json
 import threading
-from collections import defaultdict 
+from collections import defaultdict
 
-# Warning: This server is supposed to host this API along with a 
-# HTTPS enabled web server (like behind a Nginx reverse proxy) 
+# Warning: This server is supposed to host this API along with a
+# HTTPS enabled web server (like behind a Nginx reverse proxy)
 
 app = Flask(__name__)
 socketio = SocketIO(app)
@@ -19,7 +19,7 @@ db = None
 connected_clients = {}
 
 # Key: uuid, Value: set of ClientInfo
-connected_users = defaultdict(set) 
+connected_users = defaultdict(set)
 
 class ClientInfo:
     listening_uuid = None
@@ -47,6 +47,9 @@ def register():
     response = db.register_uuid (
         base64.b64decode(request.form['pks_pem']).decode('utf-8'),
         base64.b64decode(request.form['pke_pem']).decode('utf-8'),
+        request.form['username'],
+        request.form['keys'],
+        request.form['retrieval_hash'],
         request.form['rsa_sig']
     )
     if response.successful:
@@ -98,15 +101,6 @@ def send_message():
 def check_username_availablilty():
     return jsonify(successful=response.successful, message=db.check_username_exist(request.form['username']))
 
-@app.route('/upload_keys', methods=['GET', 'POST'])
-def upload_keys():
-    response = db.upload_keys (
-        request.form['username'],
-        request.form['keys'],
-        request.form['retrieval_hash']
-    )
-    return jsonify(successful=response.successful, message=response.message)
-
 @app.route('/download_keys', methods=['GET', 'POST'])
 def download_keys():
     response = db.download_keys (
@@ -151,8 +145,8 @@ def on_client_subscribe_message(uuid):
         if message_count > 0:
             print(f"{message_count} new messages arrived for uuid={uuid}, relaying it to client sid={sid}")
             socketio.emit('on_message_received',
-                response.requested_data, 
-                room=sid, 
+                response.requested_data,
+                room=sid,
                 callback=lambda:on_client_received_message(uuid, response.message))
             client.check_finished()
             break # Pause message subscription until the client has successfully received the messages
