@@ -4,6 +4,7 @@ import time
 import base64
 import string
 import random
+import hashlib
 import sqlite3
 import threading
 
@@ -95,38 +96,69 @@ class MIMSDatabase:
                 cur = conn.execute("SELECT 1 FROM users WHERE uuid = ?;", (uuid,))
                 return cur.fetchone() != None
 
-    def register_uuid(self, pks_pem, pke_pem, rsa_sig):
+    def register_new_keys(self, pks_pem, pke_pem, username, keys, retrieval_hash, rsa_sig):
         # Performs basic validation of the public keys
         # Does not verify pke_pem on server side
+        username = strip(username)
         if len(pks_pem) > 1024 or len(pke_pem) > 1024:
             return MIMSDBResponse(False, "Public key PEM too long (>1024) ")
         if not pks_pem.startswith(pem_header) or not pke_pem.startswith(pem_header):
             return MIMSDBResponse(False, "Public key PEM format invalid")
-        if (not rsa_verify(pks_pem.encode("utf-8") + pke_pem.encode("utf-8")), pks_pem, rsa_sig):
+        if len(keys) > 8192:
+            return MIMSDBResponse(False, "Key file too long (>8192) ")
+        if username == "":
+            return MIMSDBResponse(False, f"Username cannot be empty")
+        request_params = [
+            pks_pem.encode("utf-8"),
+            pke_pem.encode("utf-8"),
+            username,
+            keys,
+            retrieval_hash
+        ]
+        if (not rsa_verify(request_params, pks_pem, rsa_sig)):
             return MIMSDBResponse(False, f"Key verification error: {e}")
+        # Hash the retrieval_hash once before storing
+        # The retrieval_hash is NOT password, it is created by hasging a key derived from a key derivation function
+        # It is used to verify if the key is correct before the encrypted private key
+        # could be downloaded in order to prevent offline brute force attacks
+        retrieval_hash = base64.b64encode(hashlib.sha256(base64.b64decode(retrieval_hash)).digest()).decode('ascii')
         # Creates entries on database
         uuid = ""
         with self.threadlock:
-            with sqlite3.connect(self.db_path) as conn:
-                last_error = None
-                for retries in range(0,10):
-                    try:
-                        uuid = ''.join(random.choices(uuid_charset, k=12))
-                        conn.execute("""
+            try:
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.execute("BEGIN")
+                    last_error = None
+                    successful = False
+                    conn.execute("""
+                    INSERT INTO user_keys(username, keys, retrieval_hash)
+                    VALUES(?,?,?)
+                    """, (username, keys, retrieval_hash))
+                    for retries in range(0,10):
+                        try:
+                            uuid = ''.join(random.choices(uuid_charset, k=12))
+                            conn.execute("""
                             INSERT INTO users(uuid, pks, pke, rsa_sig)
                             VALUES(?,?,?,?,?,?)
-                        """, (
-                                uuid,
-                                pks_pem,
-                                pke_pem,
-                                rsa_sig
-                             )
-                        )
-                        conn.execute("INSERT INTO user_info(uuid) VALUES (?)", (uuid,))
-                        return MIMSDBResponse(True, uuid)
-                    except sqlite3.IntegrityError as e:
-                        last_error = e
-        return MIMSDBResponse(False, f"Internal Server Error: Uuid generation: {last_error}")
+                            """, (
+                                    uuid,
+                                    pks_pem,
+                                    pke_pem,
+                                    rsa_sig
+                                )
+                            )
+                            successful = True
+                            break
+                        except sqlite3.IntegrityError as e:
+                            last_error = e
+                    if not successful:
+                        last_error_msg = "Internal Server Error: Uuid generation"
+                        raise sqlite3.IntegrityError(f"Uuid generation: IntegrityError after 10 retires: {last_error}")
+                    conn.execute("INSERT INTO user_info(uuid) VALUES (?)", (uuid,))
+                    conn.commit()
+            except sqlite3.IntegrityError as e:
+                return MIMSDBResponse(False, str(e))
+        return MIMSDBResponse(True, uuid)
 
     # Parameters should all be in string format
     def request_public_keys(self, requesting_uuid, requester_uuid, rsa_sig):
@@ -222,21 +254,8 @@ class MIMSDatabase:
             with sqlite3.connect(self.db_path) as conn:
                     conn.execute("DELETE FROM messages WHERE id = ? AND timestamp < ?", (message['id'],timestamp))
 
-    def upload_keys(self, username, keys, retrieval_hash):
-        if len(keys) > 8192:
-            return MIMSDBResponse(False, "Key file too long (>8192) ")
-        with self.threadlock:
-            try:
-                with sqlite3.connect(self.db_path) as conn:
-                    conn.execute("""
-                    INSERT INTO user_keys(username, keys, retrieval_hash)
-                    VALUES(?,?,?)
-                    """, (username, keys, retrieval_hash))
-                return MIMSDBResponse(True, "Success")
-            except sqlite3.IntegrityError:
-                return MIMSDBResponse(False, "Username already existed")
-
     def download_keys(self, username, retrieval_hash):
+        retrieval_hash = base64.b64encode(hashlib.sha256(base64.b64decode(retrieval_hash)).digest()).decode('ascii')
         with self.threadlock:
             with sqlite3.connect(self.db_path) as conn:
                 cur = conn.execute("""
@@ -249,10 +268,7 @@ class MIMSDatabase:
                 response.requested_data = row[0]
                 return response
 
-    # The requests are signed by first sorting request_params by string alphabetically
-    # Binary data are converted to base64 before signing
     def verify_request(self, request_params, sender_uuid, rsa_sig):
-        request_str = ''.join(sorted(map(str, request_params)))
         pks_pem = ""
         with self.threadlock:
             with sqlite3.connect(self.db_path) as conn:
@@ -261,12 +277,15 @@ class MIMSDatabase:
                 if row == None:
                     return MIMSDBResponse(False, "Invalid uuid")
                 pks_pem = row[0]
-        if (rsa_verify(request_str, pks_pem, rsa_sig)):
+        if (rsa_verify(request_params, pks_pem, rsa_sig)):
             return MIMSDBResponse(True, "Success")
         else:
             return MIMSDBResponse(False, f"Key verification error: {e}")
 
-    def rsa_verify(self, request_str, pks_pem, rsa_sig):
+    # The request_params are signed by first sorting request_params by string alphabetically
+    # Binary data are converted to base64 before signing
+    def rsa_verify(self, request_params, pks_pem, rsa_sig):
+        request_str = ''.join(sorted(map(str, request_params)))
         try:
             pks = Crypto.PublicKey.RSA.import_key(pks_pem)
             # RSA 2048 SHA256withRSA/PSS
