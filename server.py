@@ -44,9 +44,9 @@ def home():
 
 @app.route('/register_uuid', methods=['GET', 'POST'])
 def register_uuid():
-    response = db.register_new_keys (
-        base64.b64decode(request.form['pks_pem']).decode('utf-8'),
-        base64.b64decode(request.form['pke_pem']).decode('utf-8'),
+    response = db.register_uuid (
+        request.form['pks_pem'],
+        request.form['pke_pem'],
         request.form['rsa_sig']
     )
     if response.successful:
@@ -110,7 +110,7 @@ def get_key_salt():
 
 @app.route('/upload_keys', methods=['GET', 'POST'])
 def upload_keys():
-    response = db.upload_identity (
+    response = db.upload_keys (
         request.form['username'],
         request.form['keys'],
         request.form['retrieval_hash'],
@@ -188,4 +188,4 @@ def on_disconnect():
 
 if __name__ == '__main__':
     db = MIMSDatabase("db.sqlite")
-    socketio.run(app, debug=True)
+    socketio.run(app, debug=True, host="192.168.1.100")
