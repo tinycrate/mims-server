@@ -63,7 +63,7 @@ class MIMSDatabase:
                     display_name TEXT,
                     display_status TEXT,
                     display_icon TEXT,
-                    rsa_sig TEXT NOT NULL,
+                    rsa_sig TEXT,
                     FOREIGN KEY(uuid) REFERENCES users(uuid)
                 );
             """)
@@ -97,16 +97,18 @@ class MIMSDatabase:
                 cur = conn.execute("SELECT 1 FROM users WHERE uuid = ?;", (uuid,))
                 return cur.fetchone() != None
 
-    def register_uuid(self, pks_pem, pke_pem, rsa_sig):
+    def register_uuid(self, pks_pem_b64, pke_pem_b64, rsa_sig):
         # Performs basic validation of the public keys
         # Does not verify pke_pem on server side
+        pks_pem = base64.b64decode(pks_pem_b64).decode('utf-8')
+        pke_pem = base64.b64decode(pke_pem_b64).decode('utf-8')
         if len(pks_pem) > 1024 or len(pke_pem) > 1024:
             return MIMSDBResponse(False, "Public key PEM too long (>1024) ")
         if not pks_pem.startswith(pem_header) or not pke_pem.startswith(pem_header):
             return MIMSDBResponse(False, "Public key PEM format invalid")
-        request_params = [pks_pem.encode("utf-8"),pke_pem.encode("utf-8")]
-        if (not rsa_verify(request_params, pks_pem, rsa_sig)):
-            return MIMSDBResponse(False, f"Key verification error: {e}")
+        request_params = [pks_pem_b64, pke_pem_b64]
+        if (not self.rsa_verify(request_params, pks_pem, rsa_sig)):
+            return MIMSDBResponse(False, f"Key verification error")
         # Creates entries on database
         uuid = ""
         with self.threadlock:
@@ -117,7 +119,7 @@ class MIMSDatabase:
                             uuid = ''.join(random.choices(uuid_charset, k=12))
                             conn.execute("""
                             INSERT INTO users(uuid, pks, pke, rsa_sig)
-                            VALUES(?,?,?,?,?,?)
+                            VALUES(?,?,?,?)
                             """, (
                                     uuid,
                                     pks_pem,
@@ -138,7 +140,7 @@ class MIMSDatabase:
         return MIMSDBResponse(True, uuid)
 
     def upload_keys(self, username, keys, retrieval_hash, salt):
-        username = strip(username)
+        username = username.strip()
         if len(keys) > 8192:
             return MIMSDBResponse(False, "Key file too long (>8192) ")
         if username == "":
@@ -155,9 +157,9 @@ class MIMSDatabase:
                     INSERT INTO user_keys(username, keys, retrieval_hash, salt)
                     VALUES(?,?,?,?)
                     """, (username, keys, retrieval_hash, salt))
-                return SIMDatabaseResponse(True, "Success")
+                return MIMSDBResponse(True, "Success")
             except sqlite3.IntegrityError:
-                return SIMDatabaseResponse(False, "duplicated")
+                return MIMSDBResponse(False, "duplicated")
 
     # Parameters should all be in string format
     def request_public_keys(self, requesting_uuid, requester_uuid, rsa_sig):
@@ -258,10 +260,10 @@ class MIMSDatabase:
             with sqlite3.connect(self.db_path) as conn:
                 cur = conn.execute("""
                 SELECT salt FROM user_keys WHERE username = ?
-                """, (username))
+                """, (username,))
                 row = cur.fetchone()
                 if row == None:
-                    return MIMSDBResponse(False, "No entries found")
+                    return MIMSDBResponse(False, "nouser")
                 response = MIMSDBResponse(True, "Success")
                 response.requested_data = row[0]
                 return response
@@ -275,7 +277,7 @@ class MIMSDatabase:
                 """, (username, retrieval_hash))
                 row = cur.fetchone()
                 if row == None:
-                    return MIMSDBResponse(False, "No entries found")
+                    return MIMSDBResponse(False, "noentries")
                 response = MIMSDBResponse(True, "Success")
                 response.requested_data = row[0]
                 return response
@@ -289,7 +291,7 @@ class MIMSDatabase:
                 if row == None:
                     return MIMSDBResponse(False, "Invalid uuid")
                 pks_pem = row[0]
-        if (rsa_verify(request_params, pks_pem, rsa_sig)):
+        if (self.rsa_verify(request_params, pks_pem, rsa_sig)):
             return MIMSDBResponse(True, "Success")
         else:
             return MIMSDBResponse(False, f"Key verification error: {e}")
@@ -307,6 +309,7 @@ class MIMSDatabase:
             verifier.verify(hash, signature)
             return True
         except (ValueError, IndexError, TypeError) as e:
+            print(e)
             return False
 
     # Makes a dictionary from sqlite3 query results
