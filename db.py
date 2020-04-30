@@ -251,7 +251,7 @@ class MIMSDatabase:
     def delete_messages_older(self, requesting_uuid, timestamp):
         with self.threadlock:
             with sqlite3.connect(self.db_path) as conn:
-                    conn.execute("DELETE FROM messages WHERE id = ? AND timestamp < ?", (message['id'],timestamp))
+                    conn.execute("DELETE FROM messages WHERE recipient_uuid = ? AND timestamp < ?", (requesting_uuid,timestamp))
 
     def get_key_salt(self, username):
         with self.threadlock:

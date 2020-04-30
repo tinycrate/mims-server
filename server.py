@@ -158,21 +158,22 @@ def on_client_subscribe_message(uuid):
         if not response.successful:
             print(f"Error retrieving messages for client sid={sid} uuid={uuid}, aborting...")
             socketio.disconnect()
+        last_successful_retrieve = response.message
         message_count = len(response.requested_data)
         if message_count > 0:
             print(f"{message_count} new messages arrived for uuid={uuid}, relaying it to client sid={sid}")
             socketio.emit('on_message_received',
                 response.requested_data,
                 room=sid,
-                callback=lambda:on_client_received_message(uuid, response.message))
+                callback=lambda:on_client_received_message(uuid, last_successful_retrieve))
             client.check_finished()
             break # Pause message subscription until the client has successfully received the messages
         client.check_finished()
 
 # Delete the messages received by client and contines to look for messages
 def on_client_received_message(client_uuid, timestamp_received):
-    db.delete_messages_older(uuid, timestamp_received)
-    on_client_subscribe_message(uuid)
+    db.delete_messages_older(client_uuid, timestamp_received)
+    on_client_subscribe_message(client_uuid)
 
 @socketio.on('connect')
 def on_connect():
