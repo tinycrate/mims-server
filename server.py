@@ -78,7 +78,7 @@ def request_public_info():
     else:
         return jsonify(successful=False, message=response.message)
 
-@app.route('/send_messge', methods=['GET', 'POST'])
+@app.route('/send_message', methods=['GET', 'POST'])
 def send_message():
     response = db.send_message (
         request.form['recipient_uuid'],

@@ -97,16 +97,14 @@ class MIMSDatabase:
                 cur = conn.execute("SELECT 1 FROM users WHERE uuid = ?;", (uuid,))
                 return cur.fetchone() != None
 
-    def register_uuid(self, pks_pem_b64, pke_pem_b64, rsa_sig):
+    def register_uuid(self, pks_pem, pke_pem, rsa_sig):
         # Performs basic validation of the public keys
         # Does not verify pke_pem on server side
-        pks_pem = base64.b64decode(pks_pem_b64).decode('utf-8')
-        pke_pem = base64.b64decode(pke_pem_b64).decode('utf-8')
         if len(pks_pem) > 1024 or len(pke_pem) > 1024:
             return MIMSDBResponse(False, "Public key PEM too long (>1024) ")
         if not pks_pem.startswith(pem_header) or not pke_pem.startswith(pem_header):
             return MIMSDBResponse(False, "Public key PEM format invalid")
-        request_params = [pks_pem_b64, pke_pem_b64]
+        request_params = [pks_pem, pke_pem]
         if (not self.rsa_verify(request_params, pks_pem, rsa_sig)):
             return MIMSDBResponse(False, f"Key verification error")
         # Creates entries on database
