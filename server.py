@@ -129,6 +129,31 @@ def download_keys():
     else:
         return jsonify(successful=False, message=response.message)
 
+@app.route('/set_display_name', methods=['GET', 'POST'])
+def set_display_name():
+    response = db.set_display_name (
+        request.form['uuid'],
+        request.form['display_name'],
+        request.form['rsa_sig']
+    )
+    if response.successful:
+        return jsonify(successful=True, message="Success", keys=response.requested_data)
+    else:
+        return jsonify(successful=False, message=response.message)
+
+@app.route('/set_display_status', methods=['GET', 'POST'])
+def set_display_status():
+    response = db.set_display_status (
+        request.form['uuid'],
+        request.form['display_status'],
+        request.form['rsa_sig']
+    )
+    if response.successful:
+        return jsonify(successful=True, message="Success", keys=response.requested_data)
+    else:
+        return jsonify(successful=False, message=response.message)
+
+
 @socketio.on('subscribe_messages')
 def subscribe_messages(user_request):
     uuid = str(user_request['uuid'])
