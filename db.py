@@ -197,7 +197,7 @@ class MIMSDatabase:
             return resp
         with self.threadlock:
             with sqlite3.connect(self.db_path) as conn:
-                conn.execute("UPDATE user_info SET display_name = ? WHERE uuid = ?", display_name, uuid)
+                conn.execute("UPDATE user_info SET display_name = ? WHERE uuid = ?", (display_name, uuid))
         return MIMSDBResponse(True, "Success")
 
     def set_display_status(self, uuid, display_status, rsa_sig):
@@ -206,7 +206,7 @@ class MIMSDatabase:
             return resp
         with self.threadlock:
             with sqlite3.connect(self.db_path) as conn:
-                conn.execute("UPDATE user_info SET display_status = ? WHERE uuid = ?", display_status, uuid)
+                conn.execute("UPDATE user_info SET display_status = ? WHERE uuid = ?", (display_status, uuid))
         return MIMSDBResponse(True, "Success")
 
     def send_message(self, recipient_uuid, aes_key_encrypted, message, sender_uuid, rsa_sig):
