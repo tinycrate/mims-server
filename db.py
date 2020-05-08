@@ -88,7 +88,7 @@ class MIMSDatabase:
     def check_username_exist(self, username):
         with self.threadlock:
             with sqlite3.connect(self.db_path) as conn:
-                cur = conn.execute("SELECT 1 FROM user_keys WHERE username = ?;", (username))
+                cur = conn.execute("SELECT 1 FROM user_keys WHERE username = ?;", (username,))
                 return cur.fetchone() != None
 
     def check_uuid_exist(self, uuid):
