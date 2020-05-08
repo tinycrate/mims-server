@@ -94,8 +94,8 @@ def send_message():
                 client.schedule_check()
     return jsonify(successful=response.successful, message=response.message)
 
-@app.route('/check_username_availablilty', methods=['GET', 'POST'])
-def check_username_availablilty():
+@app.route('/check_username_availability', methods=['GET', 'POST'])
+def check_username_availability():
     return jsonify(successful=response.successful, message=db.check_username_exist(request.form['username']))
 
 @app.route('/get_key_salt', methods=['GET', 'POST'])
