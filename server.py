@@ -98,6 +98,10 @@ def send_message():
 def check_username_availability():
     return jsonify(successful=True, message=not db.check_username_exist(request.form['username']))
 
+@app.route('/check_uuid_exist', methods=['GET', 'POST'])
+def check_uuid_exist():
+    return jsonify(successful=True, message=not db.check_username_exist(request.form['uuid']))
+
 @app.route('/get_key_salt', methods=['GET', 'POST'])
 def get_key_salt():
     response = db.get_key_salt (
