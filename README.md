@@ -3,7 +3,7 @@ MIMS - Server
 
 ### Requirements
  - Python 3.7+
- - Flask, Flask-SocketIO, pycryptodome
+ - Flask, Flask-SocketIO, pycryptodome, Pillow
     - Install them using `pip install -r requirements.txt`
 
 ### Running the server
