@@ -1,4 +1,5 @@
 #! python3
+import io
 import json
 import time
 import base64
@@ -10,6 +11,8 @@ import threading
 
 import Crypto
 import Crypto.Signature.pss
+
+from PIL import Image
 
 uuid_charset = string.ascii_letters + string.digits + "-_"
 pem_header = "-----BEGIN PUBLIC KEY-----"
@@ -190,6 +193,20 @@ class MIMSDatabase:
                 response = MIMSDBResponse(True, "Success")
                 response.requested_data = row
                 return response
+
+    def set_icon(self, uuid, display_icon, rsa_sig):
+        resp = self.verify_request([uuid, display_icon], uuid, rsa_sig)
+        if not resp.successful:
+            return resp
+        icon = Image.open(io.BytesIO(base64.b64decode(display_icon)))
+        icon.thumbnail((256, 256))
+        buffered = io.BytesIO()
+        icon.save(buffered, format="PNG")
+        icon_b64 = base64.b64encode(buffered.getvalue()).decode('ascii')
+        with self.threadlock:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("UPDATE user_info SET display_icon = ? WHERE uuid = ?", (icon_b64, uuid))
+        return MIMSDBResponse(True, "Success")
 
     def set_display_name(self, uuid, display_name, rsa_sig):
         resp = self.verify_request([uuid, display_name], uuid, rsa_sig)

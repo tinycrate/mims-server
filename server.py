@@ -145,6 +145,18 @@ def set_display_name():
     else:
         return jsonify(successful=False, message=response.message)
 
+@app.route('/set_display_icon', methods=['GET', 'POST'])
+def set_display_icon():
+    response = db.set_icon (
+        request.form['uuid'],
+        request.form['display_icon'],
+        request.form['rsa_sig']
+    )
+    if response.successful:
+        return jsonify(successful=True, message="Success", keys=response.requested_data)
+    else:
+        return jsonify(successful=False, message=response.message)
+
 @app.route('/set_display_status', methods=['GET', 'POST'])
 def set_display_status():
     response = db.set_display_status (
